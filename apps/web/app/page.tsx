@@ -105,9 +105,18 @@ export default function Home() {
         // 4. Store Token & Derive Encryption Key
         localStorage.setItem('token', response.token);
 
-        // Store encryption salt for session use (or derive key now and store in memory)
-        // For this simple example, we might store the salt or the derived key in a React Context.
-        // We'll proceed to dashboard.
+        // We derive the Master Encryption Key using the salt from the server/user data
+        // In a real app we would use a second salt (Salt_Enc) returned from login or derived differently.
+        // For this simple implementation, let's assume we use the same password but different salt?
+        // Actually the plan said "MasterEncryptionKey = KDF(MasterPassword, Salt_Enc)".
+        // The login response returns `saltEnc`.
+
+        const saltEnc = Uint8Array.from(atob(response.saltEnc), c => c.charCodeAt(0));
+        const masterKey = await deriveKey(password, saltEnc);
+        const masterKeyString = bufferToBase64(masterKey);
+
+        // Store strictly in SessionStorage (cleared on tab close) for security
+        sessionStorage.setItem('masterKey', masterKeyString);
 
         router.push('/dashboard');
     }

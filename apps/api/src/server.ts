@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import fastifyJwt from '@fastify/jwt';
 import { authRoutes } from './routes/auth';
+import { vaultRoutes } from './routes/vault';
 
 const fastify = Fastify({
     logger: true
@@ -25,6 +26,7 @@ fastify.get('/', async () => {
 
 // Register Routes
 fastify.register(authRoutes, { prefix: '/auth' });
+fastify.register(vaultRoutes, { prefix: '/vault' });
 
 const start = async () => {
     try {
