@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { fetchApi } from '../../lib/api';
 import { CreateItemModal } from '../../components/CreateItemModal';
+import { ImportModal } from '../../components/ImportModal';
 import { encrypt, decrypt } from '@password-manager/crypto';
 
 // Helper to handle base64 strings
@@ -16,6 +17,7 @@ export default function Dashboard() {
     const [items, setItems] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isImportOpen, setIsImportOpen] = useState(false);
     const [masterKey, setMasterKey] = useState<Uint8Array | null>(null);
 
     useEffect(() => {
@@ -53,16 +55,12 @@ export default function Dashboard() {
         }
     }
 
-    async function handleSaveItem(newItem: any) {
+    // Helper to encrypt and sync entire vault
+    async function syncVault(newItems: any[]) {
         if (!masterKey) return;
 
-        const updatedItems = [...items, { ...newItem, id: crypto.randomUUID() }];
-        setItems(updatedItems);
-        setIsModalOpen(false);
-
-        // Encrypt and Sync
         try {
-            const jsonStr = JSON.stringify(updatedItems);
+            const jsonStr = JSON.stringify(newItems);
             const { encrypted, iv } = await encrypt(jsonStr, masterKey);
 
             await fetchApi('/vault', {
@@ -72,11 +70,33 @@ export default function Dashboard() {
                     iv: iv
                 })
             });
+            setItems(newItems);
             console.log("Vault synced successfully!");
         } catch (err) {
             console.error("Failed to sync vault", err);
-            alert("Failed to sync to cloud. Your changes are local only (in memory).");
+            alert("Failed to sync to cloud. Changes not saved.");
         }
+    }
+
+    async function handleSaveItem(newItem: any) {
+        const updatedItems = [...items, { ...newItem, id: crypto.randomUUID() }];
+        await syncVault(updatedItems);
+        setIsModalOpen(false);
+    }
+
+    async function handleImport(importedItems: any[]) {
+        // Add IDs to imported items
+        const newItems = importedItems.map(item => ({
+            ...item,
+            id: crypto.randomUUID(),
+            createdAt: Date.now()
+        }));
+
+        // Merge with existing
+        const updatedItems = [...items, ...newItems];
+        await syncVault(updatedItems);
+        alert(`Successfully imported ${newItems.length} passwords!`);
+        setIsImportOpen(false);
     }
 
     const handleLogout = () => {
@@ -84,6 +104,13 @@ export default function Dashboard() {
         sessionStorage.removeItem('masterKey');
         router.push('/');
     };
+
+    async function handleDeleteItem(itemId: string) {
+        if (!confirm("Are you sure you want to delete this password?")) return;
+
+        const updatedItems = items.filter(i => i.id !== itemId);
+        await syncVault(updatedItems);
+    }
 
     if (loading) {
         return <div className="flex h-screen items-center justify-center dark:text-white">Loading Vault...</div>;
@@ -97,6 +124,12 @@ export default function Dashboard() {
                     <p className="text-zinc-500 text-sm">{items.length} items</p>
                 </div>
                 <div className="flex gap-4">
+                    <button
+                        onClick={() => setIsImportOpen(true)}
+                        className="px-4 py-2 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors border border-zinc-200 dark:border-zinc-800"
+                    >
+                        Import CSV
+                    </button>
                     <button
                         onClick={handleLogout}
                         className="px-4 py-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-lg transition-colors"
@@ -118,27 +151,45 @@ export default function Dashboard() {
                         <div className="text-4xl mb-4">🔐</div>
                         <h3 className="text-lg font-medium dark:text-white">Your vault is empty</h3>
                         <p className="text-zinc-500 mt-2 max-w-sm mx-auto">
-                            Add your first password to get started with secure, zero-knowledge storage.
+                            Add your first password or import from another browser.
                         </p>
+                        <button
+                            onClick={() => setIsImportOpen(true)}
+                            className="mt-4 text-blue-500 hover:underline"
+                        >
+                            Import CSV
+                        </button>
                     </div>
                 ) : (
                     <div className="grid gap-4">
                         {items.map(item => (
-                            <div key={item.id} className="p-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl hover:border-blue-500 transition-colors cursor-pointer shadow-sm">
+                            <div key={item.id} className="p-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl hover:border-blue-500 transition-colors shadow-sm group">
                                 <div className="flex justify-between items-start">
                                     <div>
                                         <h3 className="font-bold dark:text-white">{item.title}</h3>
                                         <p className="text-sm text-zinc-500">{item.username}</p>
                                     </div>
-                                    <button
-                                        onClick={() => {
-                                            navigator.clipboard.writeText(item.password);
-                                            alert("Password copied!");
-                                        }}
-                                        className="text-xs px-2 py-1 bg-zinc-100 dark:bg-zinc-800 rounded text-zinc-600 dark:text-zinc-400 hover:text-blue-500"
-                                    >
-                                        Copy Pass
-                                    </button>
+                                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                navigator.clipboard.writeText(item.password);
+                                                // alert("Password copied!"); // Too intrusive
+                                            }}
+                                            className="text-xs px-2 py-1 bg-zinc-100 dark:bg-zinc-800 rounded text-zinc-600 dark:text-zinc-400 hover:text-blue-500"
+                                        >
+                                            Copy
+                                        </button>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleDeleteItem(item.id);
+                                            }}
+                                            className="text-xs px-2 py-1 bg-red-50 dark:bg-red-900/20 rounded text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30"
+                                        >
+                                            Delete
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         ))}
@@ -150,6 +201,12 @@ export default function Dashboard() {
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
                 onSave={handleSaveItem}
+            />
+
+            <ImportModal
+                isOpen={isImportOpen}
+                onClose={() => setIsImportOpen(false)}
+                onImport={handleImport}
             />
         </div>
     );
