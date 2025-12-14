@@ -1,0 +1,48 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  authKeyHash   String   @map("auth_key_hash")
+  saltAuth      String   @map("salt_auth")
+  saltEnc       String   @map("salt_enc")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  
+  vault         Vault?
+  devices       Device[]
+  
+  @@map("users")
+}
+
+model Vault {
+  id              String   @id @default(cuid())
+  userId          String   @unique @map("user_id")
+  encryptedData   String   @map("encrypted_data") @db.Text
+  iv              String
+  version         Int      @default(1)
+  lastSyncedAt    DateTime @default(now()) @map("last_synced_at")
+  
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("vaults")
+}
+
+model Device {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id")
+  deviceName  String   @map("device_name")
+  deviceType  String   @map("device_type") // web, ios, android
+  lastActive  DateTime @default(now()) @map("last_active")
+  
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("devices")
+}
